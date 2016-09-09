@@ -1,6 +1,6 @@
 import $ from 'jquery'
 import Mustache from 'mustache'
-import SNAP from '../../models/ontologies/SNAP'
+import SNAP from '../../models/ontologies/snap'
 /**
  * Class for the Editor interface
  */

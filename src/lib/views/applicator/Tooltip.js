@@ -1,4 +1,4 @@
-import SNAP from '../../models/ontologies/SNAP'
+import SNAP from '../../models/ontologies/snap'
 
 class Tooltip {
     constructor(app) {
