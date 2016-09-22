@@ -2,6 +2,7 @@ import Templates from '../annotator/Templates'
 import SNAP from '../../models/ontologies/snap'
 import OA from '../../models/ontologies/oa'
 import Utils from '../../utils'
+import wrapRangeText from 'wrap-range-text'
 import _ from 'lodash'
 import $ from 'jquery'
 
@@ -15,43 +16,47 @@ class Editor {
         var selector = {}
         var labels = SNAP.labels
         var template = new Templates(labels)
-        var button = $('<div class="btn btn-circle btn-info" id="edit_btn" style="display:none;" data-toggle="modal" data-target="#edit_modal"><span class="glyphicon glyphicon-paperclip"></span></div>')
-        jqParent.append(button)
-        var modal = $('<div id="edit_modal" class="modal fade in" style="display: none; "><div class="well"><div class="modal-header"><a class="close" data-dismiss="modal">×</a><h3>This is a Modal Heading</h3></div><div class="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-success" data-dismiss="modal">Create</button><button type="submit" class="btn btn-danger" data-dismiss="modal">Cancel</button></div></div>')
+        var button = $('<div class="btn" id="edit_btn" data-toggle="modal" data-target="#edit_modal"><span class="glyphicon glyphicon-cog"></span></div>')
+        $('body').on('shown.bs.popover',(e) => $('#'+e.target.getAttribute('aria-describedby')).find('.popover-footer').append(button))
+        var modal = $('<div id="edit_modal" class="modal fade in" style="display: none; "><div class="well"><div class="modal-header"><a class="close" data-dismiss="modal">×</a><h3>Annotation Editor</h3></div><div class="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-success" data-dismiss="modal">Create</button><button type="submit" class="btn btn-danger" data-dismiss="modal">Cancel</button></div></div>')
         jqParent.append(modal)
 
-        jqParent.mouseup((event) => {
+        jqParent.mouseup((e) => {
+            var pos = $('#popover-selection')
+            if (pos) {
+                pos.popover('destroy')
+                pos.replaceWith(pos.text())
+            }
 
             var selection = document.getSelection();
 
             // replace starter with
-            if (selection && !selection.isCollapsed && button.css('display')==='none' && modal.css('display')==='none') {
+            if (selection && !selection.isCollapsed && modal.css('display')==='none') {
                 // add selector to modal or button
 
                 var selector = OA.create("http://www.w3.org/ns/oa#TextQuoteSelector")(jqParent,selection);
 
-                var menuState = document.documentElement.clientWidth - parseInt($("#menu-container").css('width'))
-                var deltaH = menuState ? window.scrollY+15 : window.scrollY-parseInt($("#menu-container").css('height'))+15;
-                var deltaW = menuState ? window.scrollX+parseInt($("#menu-container").css('width'))-10 : window.scrollX-10;
-                button.css({display:"block",position:"absolute",left:event.clientX-deltaW,top:event.clientY+deltaH});
                 modal.update({},selector)
                 origin = {data:()=>{return {}}}
-            } else button.css({display:"none"});
+                span = document.createElement('span')
+                span.setAttribute('id','popover-selection')
+                wrapRangeText(span,selection.getRangeAt(0))
+
+                $('#popover-selection').popover({
+                    container:"body",
+                    html:"true",
+                    trigger: "manual",
+                    placement: "auto top",
+                    title: selector.exact,
+                    content: "<div class='popover-footer'/>"
+                })
+                $('#popover-selection').popover('show')
+            }
 
         })
-
-        // move starter here and append to jqParent
-
-
-
 
         var body = modal.find('.modal-body')
         var apply_button = modal.find('.btn-success')
-        button.click((e) => {
-            // done: show modal (automatically w/ data-toggle)
-            // planned: hide button if clicked elsewhere
-            button.css('display','none')
-        })
 
         /**
          * We are done editing and are now processing, in order:
@@ -60,17 +65,8 @@ class Editor {
          * 3. Modified annotation bodies
          * 4. Newly created annotation body
          */
-        // planned: make button disabled by default, check if it needs to be enabled
-        // note: user = $('body').data('user')
-        // note: address = $('body').data('urn') || document.url
-        // note: selector = modal.selector
-        // note: data =
-        // note: delete_graphs contains a list of annotation ids to delete [String]
         apply_button.click((e) => {
             var annotator = this.annotator()
-            // NOTE: COMPUTING EDITS
-            var NIL = "_________"
-
             var annotations = origin.data('annotations')
             var dG = body.find('.graph.old.delete')
             var delete_graphs = dG.map((i,el) => $(el).data('graph')).get()
@@ -85,12 +81,12 @@ class Editor {
             dT.remove()
 
             var uT = body.find('.graph.old .triple.update')
-            var update_triples = _.zip(uT.closest('.graph.old').map((i,el) => $(el).data('graph')), uT.map((i,el) => $(el).data('original-subject')), uT.map((i,el) => $(el).data('original-predicate')), uT.map((i,el) => $(el).data('original-object')), uT.map((i,el) => $(el).data('subject')), uT.map((i,el) => $(el).data('predicate')), uT.map((i,el) => $(el).data('object')))
+            var update_triples = _.zip(uT.closest('.graph.old').map((i,el) => $(el).data('graph')), uT.map((i,el) => $(el).data('original-subject')), uT.map((i,el) => $(el).data('original-predicate')), uT.map((i,el) => $(el).data('original-object')), uT.map((i,el) => $(el).attr('data-subject')), uT.map((i,el) => $(el).attr('data-predicate')), uT.map((i,el) => $(el).attr('data-object')))
 
             var cT = body.find('.graph.new .triple:not(.delete)')
             var cite = Utils.cite(app.getUser()+app.getUrn(),Math.random().toString())
-            var new_triples = _.flatten(_.zip(cT.map((i,el) => $(el).data('subject')), cT.map((i,el) => $(el).data('predicate')), cT.map((i,el) => $(el).data('object')))
-                .filter((t)=> t[0]!=NIL && t[1]!=NIL && t[2]!=NIL)
+            var new_triples = _.flatten(_.zip(cT.map((i,el) => $(el).attr('data-subject')), cT.map((i,el) => $(el).attr('data-predicate')), cT.map((i,el) => $(el).attr('data-object')))
+                .filter((t)=> t[0] && t[1] && t[2])
                 .map((t) => {return {g:cite,s:t[0],p:t[1],o:t[2]}})
                 .map((t) => SNAP.expand()(t,annotations)))
             // planned: add title and motivatedby
@@ -100,10 +96,7 @@ class Editor {
             var create_triples = new_triples.length ? _.concat(new_triples,selector_triples) : []
 
 
-
-            // NOTE: APPLYING EDITS BELOW
-
-            body.html('<span class="spinner">JUST A SEC!</span>')
+            body.html('<span class="spinner"></span>')
             var acc = []
             annotator
                 .drop(delete_graphs)
@@ -125,28 +118,21 @@ class Editor {
 
             // planned: this can be improved; the goal is to take a single step in history
 
-            body.html('<span class="okay">OKAY!</span>')
-            body.html('<span class="failure">OH NO!</span>')
+            body.html('<span class="okay"></span>')
+            body.html('<span class="failure"></span>')
+            origin.popover('hide')
         })
 
         modal.update = (data, newSelector) => {
-            // done: populate with graphs/triples
             // planned: apply ontology-specific transformations
             var graphs = SNAP.simplify()(data)
             selector = newSelector
             template.init(body,{annotations:Object.keys(graphs).map((k) => { return {g:k,triples:graphs[k]}})})
-            // interface.button.click -> get selections and create sparql to delete them
         }
 
         this.register = (jqElement) => {
             jqElement.click((e) => {
                 origin = jqElement
-                // planned: make button disappear again
-                // planned: merge with selection tool (via a container for plugin buttons)
-                var menuState = document.documentElement.clientWidth - parseInt($("#menu-container").css('width'))
-                var deltaH = menuState ? window.scrollY : window.scrollY-parseInt($("#menu-container").css('height'));
-                var deltaW = menuState ? window.scrollX+parseInt($("#menu-container").css('width')) : window.scrollX;
-                button.css({display:"block",position:"absolute",left:e.clientX-deltaW,top:e.clientY+deltaH});
                 modal.update(jqElement.data('annotations'),jqElement.data('selector'))
             })
         }
