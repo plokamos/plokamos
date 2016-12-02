@@ -44162,14 +44162,18 @@
 	    }, {
 	        key: "hash",
 	        value: function hash(str) {
-	            return JSON.stringify(str).split("").reduce(function (a, b) {
+	            return JSON.stringify(str || Math.random()).split("").reduce(function (a, b) {
 	                a = (a << 5) - a + b.charCodeAt(0);return a & a;
 	            }, 0).toString(16).replace("-", "0");
 	        }
 	    }, {
 	        key: "cite",
 	        value: function cite(pre, post) {
-	            return "http://data.perseus.org/collections/urn:cite:perseus:pdljann." + this.hash(pre) + this.hash(post);
+	            return !pre || !post || "%/?#:.@-[]\\\"&<>^`|{}~".split("").map(function (s) {
+	                return (pre + post).indexOf(s) + 1;
+	            }).reduce(function (acc, b) {
+	                return acc && b;
+	            }, true) ? undefined : "http://data.perseus.org/collections/urn:cite:perseus:pdljann." + this.hash(pre) + this.hash(post);
 	        }
 	    }, {
 	        key: "substringMatcher",
@@ -44202,171 +44206,105 @@
 	    return Utils;
 	}();
 
-	var Plugin = function () {
-	    function Plugin() {
-	        classCallCheck(this, Plugin);
-	    }
+	/**
+	 *
+	 */
 
-	    createClass(Plugin, [{
-	        key: "template",
-	        value: function template() {}
-	    }, {
-	        key: "button",
-	        value: function button() {}
-	    }, {
-	        key: "delete_graphs",
-	        value: function delete_graphs() {}
-	    }, {
-	        key: "delete_triples",
-	        value: function delete_triples() {}
-	    }, {
-	        key: "update_triples",
-	        value: function update_triples() {}
-	    }, {
-	        key: "create_triples",
-	        value: function create_triples() {}
-	    }]);
-	    return Plugin;
-	}();
-
-	var View = function View(ontology, labels) {
-	    var _this = this;
-
+	var View =
+	/**
+	 *
+	 * @param ontology The apps ontologySet
+	 * @param activate A function that sets up event handlers in the editor
+	 * @param map This is validation -->
+	 * @param partials A collection of Mustache templates to assemble the interface for editing annotation bodies
+	 * @param view Additions to partials, e.g. macros
+	 * @param vaalidator A configured validator instance to provide UI feedback to data entries
+	 */
+	function View(ontology, activate, partials, view, validator) {
 	    classCallCheck(this, View);
 
-	    this.substringMatcher = Utils.substringMatcher;
-	    this.names = ontology.resources(); // todo: get from the vocabulary/ies in ontology; it's a simple list of uris
 	    var self = this;
+	    self.activate = activate(self);
+	    self.substringMatcher = Utils.substringMatcher;
+	    self.names = ontology.resources();
 	    self.ontology = ontology;
-	    this.decodeHTML = Utils.decodeHTML;
+	    self.decodeHTML = Utils.decodeHTML;
 
-	    this.updateValue = function (event, text) {
-	        var map = {
-	            subject: ["http://data.perseus.org/people/smith:", "smith:"],
-	            predicate: ["http://data.snapdrgn.net/ontology/snap#", "snap:", "http://data.perseus.org/rdfvocab/addons/", "perseusrdf:"],
-	            object: ["http://data.perseus.org/people/smith:", "smith:"]
-	        };
-	        var triple = $$1(event.target).closest('.triple').get(0);
-	        var token = $$1(event.target).closest('.token').data('token');
-	        triple.setAttribute('data-' + token, text);
-	        if (triple.dataset[token] != triple.dataset[token + '-original']) $$1(triple).addClass('update');
-	        if (_$1.reduce(map[token], function (acc, x) {
-	            return acc || text.startsWith(x);
-	        }, false)) {
+	    /**
+	     * This function registers data change events in the editor, propagates them to the embedded state and runs the validator
+	     * @param event The change event
+	     * @param text The data that's been entered (except in case of paste event)
+	     */
+	    self.updateValue = function (event, text) {
+	        var triple, token;
+	        if (!text && event.type === "paste") {
+	            text = event.target.value + event.originalEvent.clipboardData.getData("text");
+	        }
+	        if (text) {
+	            triple = $$1(event.target).closest('.triple').get(0);
+	            token = $$1(event.target).closest('.token').data('token');
+	            triple.setAttribute('data-' + token, text);
+	            if (triple.dataset[token] != triple.dataset[token + '-original']) $$1(triple).addClass('update');
+	        }
+	        if (text && validator.validate(token, text)) {
 	            $$1(event.target).removeClass('invalid');
 	            $$1(event.target).addClass('valid');
 	        } else {
 	            $$1(event.target).removeClass('valid');
 	            $$1(event.target).addClass('invalid');
 	        }
-	        $$1('#btn-apply').prop('disabled', $$1('.graph.old').find('.invalid').length || $$1('.graph.new').find('.typeahead.tt-input.valid').length != $$1('.graph.new').find('.typeahead.tt-input').length);
+
+	        $$1('#btn-apply').prop('disabled', validator.validate());
 	    };
 
-	    this.view = {
+	    self.view = Object.assign({}, {
 	        label: function label() {
 	            return function (uri, render) {
-	                var rendered = _this.decodeHTML(render(uri));
+	                var rendered = self.decodeHTML(render(uri));
 	                return self.ontology.label(rendered) || rendered;
 	            };
 	        }
-	    };
+	    }, view);
 
-	    this.partials = {
-	        triple: '\n              <div class="triple" title="Graph:{{g}} Subject:{{s}} Predicate:{{p}} Object:{{o}}" data-original-subject="{{s}}" data-original-predicate="{{p}}" data-original-object="{{o}}" data-subject="{{s}}" data-predicate="{{p}}" data-object="{{o}}">\n                <div class="sentence well container">\n                  <div class="token subject col-xs-12 col-md-4" data-token="subject">\n                    <input class="typeahead" placeholder="Subject" value="{{#label}}{{s}}{{/label}}">\n                  </div>\n                  <div class="token predicate col-xs-12 col-md-4" data-token="predicate">\n                    <input class="typeahead" placeholder="Predicate" value="{{#label}}{{p}}{{/label}}">\n                  </div>\n                  <div class="token object col-xs-12 col-md-4" data-token="object">\n                    <input class="typeahead" placeholder="Object" value="{{#label}}{{o}}{{/label}}">\n                  </div>\n                </div>\n                <div class="btn-delete" title="Delete triple"><span class="glyphicon glyphicon-trash"/></div>\n              </div>\n            ',
+	    self.partials = Object.assign({}, {
+	        // todo: do graphs -> components -> gspo (also needs some way of representing different annotation body shapes)
 	        graph: '<div class="graph old" data-graph="{{g}}">{{#triples}}{{> triple}}{{/triples}}</div>',
 	        graphs: '{{#annotations}}{{> graph}}{{/annotations}}',
 	        // done: add empty graph container to create template and add new triples to it.
-	        new: '<div class="graph new"/><div style="text-align: center; z-index:5;"><div id="new_button" class="btn btn-info btn-circle" title="Add triple">+</div></div>',
+	        new: '<div class="graph new"/><div style="text-align: center; z-index:5;"><div id="new_button" class="btn btn-info btn-circle" title="Add component">+</div></div>',
 	        anchor: '<div class=\'anchor\'><span class="prefix selector">{{selector.prefix}}</span><span class="exact selector">{{selector.exact}}</span><span class="suffix selector">{{selector.suffix}}</span></div>'
-	    }; // planned: add selector and display anchor
+	    }, partials);
 
-	    this.init = function (jqElement, data) {
-	        jqElement.html(Mustache.render("{{> graphs}}{{> new}}{{> anchor}}", Object.assign({}, data, self.view), self.partials));
-	        jqElement.closest('.modal').find();
-	        function activate(el) {
-	            var _this2 = this;
-
-	            el.find('div.btn-delete').click(function (e) {
-	                var triple = $$1(e.target).closest('.triple');
-	                triple.animate({ 'height': '0px', 'margin-top': '0px', 'margin-bottom': '0px' }, { duration: 150, complete: function complete() {
-	                        $$1(e.target).closest('.triple').hide();
-	                    } });
-	                triple.addClass('delete');
-	                if (!triple.siblings(':not(.delete)').length) triple.closest('.graph.old').addClass('delete');
-	            });
-	            el.find('.btn-accept').click(function (e) {
-	                var triple = $$1(e.target).closest('.triple');
-	                var text = triple.find('.tt-input').val();
-	                var editing = triple.find('a.editing');
-	                if (text.trim()) {
-	                    editing.text(_this2.ontology.label(text)); // <-- planned: generalize for other ontologies
-	                    triple.addClass('update');
-	                    triple.get().forEach(function (elem) {
-	                        return elem.setAttribute("data-" + editing.data('token'), text);
-	                    });
-	                }
-	                editing.removeClass('editing');
-	            });
-	            // todo: rewrite btn-accept to apply label to entered values
-	            el.find('#new_button').click(function (e) {
-	                var triple = $$1('.graph.new').find('.triple:not(.delete):last');
-	                // the following prevents the button from creating a new triple before the previous one has been completed
-	                if (!triple.length || triple.attr('data-subject') && triple.attr('data-predicate') && triple.attr('data-object')) {
-	                    var list = $$1(Mustache.render("{{> triple}}", Object.assign({}, { g: "", s: "", p: "", o: "" }, self.view), self.partials));
-	                    list.appendTo($$1('.graph.new'));
-	                    activate(list);
-	                }
-	            });
-	            el.find('input').each(function (i, e) {
-	                return $$1(e).typeahead({ minLength: 3, highlight: true }, { source: self.substringMatcher(self.names) });
-	            });
-
-	            el.find('.token').on('typeahead:selected', self.updateValue);
-	            el.find('.token').on('typeahead:autocompleted', self.updateValue);
-	            el.find('.token').on('keyup', function (e) {
-	                if (e.key.length === 1 || e.key === "Backspace") {
-	                    self.updateValue(e, e.target.value);
-	                }
-	            });
-
-	            return el;
-	        }
-	        // jqElement.find('.tt-menu').insertAfter(this.closest('.group'))
-	        // planned: move autocomplete element (possibly have to add another container on the outside)
-	        return activate(jqElement);
+	    /**
+	     * This function embeds an editor into jqElement and populates it with data
+	     * @param jqElement Container for editor interface
+	     * @param data Annotations to render in annotations -> components -> gspo format
+	     * @return {*}
+	     */
+	    self.init = function (jqElement, data) {
+	        var res = Mustache.render("{{> graphs}}{{> new}}{{> anchor}}", Object.assign({}, data, self.view), self.partials);
+	        jqElement.html(res);
+	        return self.activate(jqElement);
 	    };
 	};
 
+	/**
+	 * The Reporter class communicates input from the interface layer to
+	 */
+
+
 	var Reporter = function () {
-	    function Reporter(ontologies, annotator, urn) {
+	    function Reporter(ontologies, annotator, urn, titleFn, namespace) {
 	        classCallCheck(this, Reporter);
 
 	        this.urn = urn;
 	        this.ontologies = ontologies;
 	        this.annotator = annotator;
+	        this.title = titleFn;
+	        this.namespace = namespace;
 	    }
 
 	    createClass(Reporter, [{
-	        key: 'title',
-	        value: function title(bindings, annotationId) {
-
-	            // todo: Use ontologies to figure out title? == app.ontology.makeTitle(bindings)
-	            var object = _$1.find(bindings, function (binding) {
-	                return binding.p.value.endsWith("bond-with");
-	            }).o.value;
-	            var bond = _$1.find(bindings, function (binding) {
-	                return binding.p.value.endsWith("has-bond");
-	            }).o.value;
-	            var predicate = _$1.find(bindings, function (binding) {
-	                return binding.s.value === bond && binding.p.value.endsWith("bond-with");
-	            }).o.value;
-
-	            var title = object + ' identifies ' + object.replace('http://data.perseus.org/people/smith:', '').split('-')[0] + ' as ' + predicate + ' in ' + this.urn;
-
-	            // todo: figure out default graph for use cases (maybe motivatedBy, by plugin or manual in anchor?) BY PLUGIN
-	            return OA.makeTitle(annotationId, SocialNetwork.uri(), title);
-	        }
-	    }, {
 	        key: 'delete_graphs',
 	        value: function delete_graphs() {
 	            var dG = this.annotator().modal.find('.graph.old.delete');
@@ -44379,7 +44317,7 @@
 	    }, {
 	        key: 'delete_triples',
 	        value: function delete_triples(annotations) {
-	            var _this3 = this;
+	            var _this = this;
 
 	            var dT = this.annotator().modal.find('.graph.old .triple.delete');
 	            var delete_triples = _$1.flatten(_$1.zip(dT.closest('.graph.old').map(function (i, el) {
@@ -44393,7 +44331,7 @@
 	            })).map(function (zipped) {
 	                return { g: zipped[0], s: zipped[1], p: zipped[2], o: zipped[3] };
 	            }).map(function (gspo) {
-	                return _this3.ontologies.expand(gspo, annotations);
+	                return _this.ontologies.expand(gspo, annotations, _this.namespace);
 	            }));
 	            dT.remove();
 	            return delete_triples;
@@ -44421,8 +44359,8 @@
 	        }
 	    }, {
 	        key: 'create_triples',
-	        value: function create_triples(annotations, cite, selector) {
-	            var _this4 = this;
+	        value: function create_triples(annotations, cite, selector, defaultGraph) {
+	            var _this2 = this;
 
 	            var cT = this.annotator().modal.find('.graph.new .triple:not(.delete)');
 	            var new_triples = _$1.flatten(_$1.zip(cT.map(function (i, el) {
@@ -44431,17 +44369,15 @@
 	                return $$1(el).attr('data-predicate');
 	            }), cT.map(function (i, el) {
 	                return $$1(el).attr('data-object');
-	            })).filter(function (t) {
-	                return t[0] && t[1] && t[2];
-	            }).map(function (t) {
+	            })).map(function (t) {
 	                return { g: cite, s: t[0], p: t[1], o: t[2] };
 	            }).map(function (t) {
-	                return _this4.ontologies.expand(t, annotations);
+	                return _this2.ontologies.expand(t, annotations, _this2.namespace);
 	            }));
-	            _$1.assign(selector, { id: cite + "#sel-" + Utils.hash(JSON.stringify(selector)).slice(0, 4) });
+	            selector.id = cite + "#sel-" + Utils.hash(JSON.stringify(selector)).slice(0, 4);
 	            var selector_triples = OA.expand(selector.type)(_$1.mapValues(selector, function (v) {
 	                return v.replace(new RegExp('\n', 'ig'), '');
-	            }), SocialNetwork.uri());
+	            }), defaultGraph);
 	            var create_triples = new_triples.length ? _$1.concat(new_triples, selector_triples, this.title(_$1.flatten(new_triples), cite)) : [];
 	            return _$1.flatten(create_triples);
 	        }
@@ -44449,44 +44385,73 @@
 	    return Reporter;
 	}();
 
-	var SocialNetwork = function (_Plugin) {
-	    inherits(SocialNetwork, _Plugin);
+	/**
+	 *
+	 *
+	 */
 
-	    function SocialNetwork(app) {
-	        classCallCheck(this, SocialNetwork);
 
-	        var _this5 = possibleConstructorReturn(this, (SocialNetwork.__proto__ || Object.getPrototypeOf(SocialNetwork)).call(this));
+	var Validator =
+	/**
+	 *
+	 * @param positionsMp A map between token positions and valid namespaces/prefixes
+	 * @param validateFn
+	 */
+	function Validator(positionsMp, validateFn) {
+	    classCallCheck(this, Validator);
 
-	        var self = _this5;
-	        _this5.annotator = function () {
+	    this.validate = validateFn(positionsMp);
+	    this.map = function () {
+	        return positionsMp;
+	    };
+	};
+
+	// todo: develop null ops as placeholders
+	// i.e. Plugin is instantiable and does pure gspo handling
+
+
+	var Plugin = function () {
+	    function Plugin(app, config) {
+	        var _this3 = this;
+
+	        classCallCheck(this, Plugin);
+
+	        var self = this;
+	        this.annotator = function () {
 	            return app.annotator;
 	        };
-	        _this5.view = new View(app.ontology);
-	        _this5.reporter = new Reporter(app.ontology, _this5.annotator, app.getUrn());
-	        _this5.origin = {};
-	        _this5.selector = {};
+	        this.validator = new Validator(config.validateMp, config.validateFn);
+	        // ontology, activate, map, partials, view
+	        this.view = new View(app.ontology, config.activateFn, config.partials, config.view, this.validator);
+	        // ontologies, annotator, urn, title
+	        this.reporter = new Reporter(app.ontology, this.annotator, config.urn, config.titleFn, this.constructor.ns());
+	        this.origin = {};
+	        this.selector = {};
 
-	        var button = '<div class="btn btn-primary btn-socialnetwork btn-edit" data-toggle="modal" data-target="#edit_modal"><span class="glyphicon glyphicon-user"></span></div>';
+	        var button = '<div class="btn btn-primary btn-' + this.constructor.name + ' btn-edit" data-toggle="modal" data-target="#edit_modal" title="Edit ' + this.constructor.name + '"><span class="glyphicon glyphicon-' + this.constructor.icon() + '"></span></div>';
 	        $$1('body').on('shown.bs.popover', function (e) {
 	            return $$1('#' + e.target.getAttribute('aria-describedby')).find('.popover-footer').append(button);
 	        });
-	        $$1('body').on('click', '.btn-socialnetwork', function (e) {
-	            self.annotator().modal.find('.modal-header > h3').html("Social Network");
+	        $$1('body').on('click', '.btn-' + this.constructor.name, function (e) {
+	            self.annotator().modal.find('.modal-header > h3').html(_this3.constructor.name);
 	            var id = $$1(e.target).closest('.popover').attr('id');
 	            self.origin = $$1(document.querySelectorAll('[aria-describedby="' + id + '"]'));
+
 	            var data = _$1.pickBy(self.origin.data('annotations'), function (v) {
 	                return _$1.find(v, function (o) {
-	                    return (o.g.value || o.g) === SocialNetwork.uri();
+	                    return (o.g.value || o.g) === _this3.constructor.uri();
 	                });
 	            });
 	            var newSelector = self.origin.data('selector');
+	            _this3.selector = newSelector;
+	            var body = $$1('.modal-body');
+
 	            var graphs = _$1.mapValues(data, function (v, k) {
 	                return _$1.flatten(OA.getBodies(v).map(function (b) {
-	                    return app.ontology.simplify(b, k);
+	                    return app.ontology.simplify(b, k, _this3.constructor.ns());
 	                }));
 	            });
-	            _this5.selector = newSelector;
-	            var body = $$1('.modal-body');
+
 	            self.view.init(body, {
 	                annotations: Object.keys(graphs).map(function (k) {
 	                    return { g: k, triples: graphs[k] };
@@ -44494,38 +44459,25 @@
 	            });
 
 	            var apply_button = self.annotator().modal.find('#btn-apply');
-	            // todo: add selector to button?
 	            apply_button.off();
 	            apply_button.on('click', self.apply);
 	            // init reporter
 	        });
 
-	        _this5.template = function () {};
-
-	        _this5.button = function () {};
-
-	        /**
-	         * We are done editing and are now processing, in order:
-	         * 1. Pre-existing annotation bodies that have been completely deleted
-	         * 2. Partially deleted annotation bodies
-	         * 3. Modified annotation bodies
-	         * 4. Newly created annotation body
-	         */
-	        _this5.apply = function (event) {
+	        this.apply = function (event) {
 
 	            // get prerequisite data
 	            var annotations = self.origin.data('annotations');
 	            var cite = Utils.cite(app.getUser() + app.getUrn(), Math.random().toString());
-
 	            // retrieve data
 	            var delete_graphs = self.reporter.delete_graphs();
 	            var delete_triples = self.reporter.delete_triples(annotations);
 	            var update_triples = self.reporter.update_triples();
-	            var create_triples = self.reporter.create_triples(annotations, cite, self.selector);
+	            var create_triples = self.reporter.create_triples(annotations, cite, self.selector, _this3.constructor.uri());
 
 	            // send to annotator
 	            var acc = [];
-	            var annotator = _this5.annotator();
+	            var annotator = _this3.annotator();
 	            annotator.drop(delete_graphs).then(function (res) {
 	                acc.push(res);
 	                return annotator.delete(_$1.concat(delete_triples, delete_graphs.map(function (id) {
@@ -44533,14 +44485,17 @@
 	                })));
 	            }).then(function (res) {
 	                acc.push(res);
+	                // todo: make sure annotator is ontology agnostic, receives list of gspo
 	                return annotator.update(_$1.flatten(update_triples.map(function (t) {
-	                    return app.ontology.expand({ g: t[0], s: t[1], p: t[2], o: t[3] }, annotations);
-	                })), _$1.flatten(update_triples.map(function (t) {
-	                    return app.ontology.expand({ g: t[0], s: t[4], p: t[5], o: t[6] }, annotations);
-	                })), SocialNetwork.uri());
+	                    return app.ontology.expand({ g: t[0], s: t[1], p: t[2], o: t[3] }, annotations, _this3.constructor.ns());
+	                })), // todo: use correct ontology
+	                _$1.flatten(update_triples.map(function (t) {
+	                    return app.ontology.expand({ g: t[0], s: t[4], p: t[5], o: t[6] }, annotations, _this3.constructor.ns());
+	                })), // todo: use correct ontology
+	                _this3.constructor.uri());
 	            }).then(function (res) {
 	                acc.push(res);
-	                return annotator.create(cite, create_triples, SocialNetwork.uri());
+	                return annotator.create(cite, create_triples, _this3.constructor.uri());
 	            }).then(function (res) {
 	                return annotator.apply(_$1.flatten(acc.concat(res)));
 	            });
@@ -44548,9 +44503,122 @@
 	            self.origin.popover('hide');
 	        };
 
-	        _this5.register = function () {};
+	        this.register = function () {};
+	    }
 
-	        return _this5;
+	    createClass(Plugin, null, [{
+	        key: 'icon',
+	        value: function icon() {
+	            return "cog";
+	        }
+	    }, {
+	        key: 'ns',
+	        value: function ns() {
+	            return "";
+	        }
+	    }, {
+	        key: 'uri',
+	        value: function uri() {
+	            return "http://data.perseus.org/graphs/default";
+	        }
+	    }]);
+	    return Plugin;
+	}();
+
+	var SocialNetwork = function (_Plugin) {
+	    inherits(SocialNetwork, _Plugin);
+
+	    function SocialNetwork(app) {
+	        var _this;
+
+	        classCallCheck(this, SocialNetwork);
+
+
+	        var config = {
+	            titleFn: function titleFn(bindings, annotationId) {
+
+	                // todo: this part is plugin specific
+	                var object = _$1.find(bindings, function (binding) {
+	                    return binding.p.value.endsWith("bond-with");
+	                }).o.value;
+	                var bond = _$1.find(bindings, function (binding) {
+	                    return binding.p.value.endsWith("has-bond");
+	                }).o.value;
+	                var predicate = _$1.find(bindings, function (binding) {
+	                    return binding.s.value === bond && binding.p.value.endsWith("bond-with");
+	                }).o.value;
+
+	                var title = object + ' identifies ' + object.replace('http://data.perseus.org/people/smith:', '').split('-')[0] + ' as ' + predicate + ' in ' + _this.urn;
+
+	                return OA.makeTitle(annotationId, SocialNetwork.uri(), title);
+	            },
+	            activateFn: function activateFn(self) {
+	                return function (el) {
+	                    el.find('div.btn-delete').click(function (e) {
+	                        var triple = $$1(e.target).closest('.triple');
+	                        triple.animate({ 'height': '0px', 'margin-top': '0px', 'margin-bottom': '0px' }, { duration: 150, complete: function complete() {
+	                                $$1(e.target).closest('.triple').hide();
+	                            } });
+	                        triple.addClass('delete');
+	                        if (!triple.siblings(':not(.delete)').length) triple.closest('.graph.old').addClass('delete');
+	                    });
+	                    el.find('.btn-accept').click(function (e) {
+	                        var triple = $$1(e.target).closest('.triple');
+	                        var text = triple.find('.tt-input').val();
+	                        var editing = triple.find('a.editing');
+	                        if (text.trim()) {
+	                            editing.text(_this.ontology.label(text)); // <-- planned: generalize for other ontologies
+	                            triple.addClass('update');
+	                            triple.get().forEach(function (elem) {
+	                                return elem.setAttribute("data-" + editing.data('token'), text);
+	                            });
+	                        }
+	                        editing.removeClass('editing');
+	                    });
+	                    // todo: rewrite btn-accept to apply label to entered values
+	                    // todo: fix self. references
+	                    el.find('#new_button').click(function (e) {
+	                        var triple = $$1('.graph.new').find('.triple:not(.delete):last');
+	                        // the following prevents the button from creating a new triple before the previous one has been completed
+	                        if (!triple.length || triple.attr('data-subject') && triple.attr('data-predicate') && triple.attr('data-object')) {
+	                            var list = $$1(Mustache.render("{{> triple}}", Object.assign({}, { g: "", s: "", p: "", o: "" }, self.view), self.partials)); // todo: self
+	                            list.appendTo($$1('.graph.new'));
+	                            self.activate(list);
+	                        }
+	                    });
+	                    el.find('input').each(function (i, e) {
+	                        return $$1(e).typeahead({ minLength: 3, highlight: true }, { source: self.substringMatcher(self.names) });
+	                    }); // todo: self
+
+	                    el.find('.token').on('typeahead:selected', self.updateValue); // todo: self
+	                    el.find('.token').on('typeahead:autocompleted', self.updateValue); // todo: self
+	                    el.find('.token').on('keyup', function (e) {
+	                        if (e.key.length === 1 || e.key === "Backspace") {
+	                            self.updateValue(e, e.target.value);
+	                        }
+	                    }); // todo: self
+
+	                    return el;
+	                };
+	            },
+	            partials: {
+	                triple: '\n              <div class="triple" title="Graph:{{g}} Subject:{{s}} Predicate:{{p}} Object:{{o}}" data-original-subject="{{s}}" data-original-predicate="{{p}}" data-original-object="{{o}}" data-subject="{{s}}" data-predicate="{{p}}" data-object="{{o}}">\n                <div class="sentence well container">\n                  <div class="token subject col-xs-12 col-md-4" data-token="subject">\n                    <input class="typeahead" placeholder="Subject" value="{{#label}}{{s}}{{/label}}">\n                  </div>\n                  <div class="token predicate col-xs-12 col-md-4" data-token="predicate">\n                    <input class="typeahead" placeholder="Predicate" value="{{#label}}{{p}}{{/label}}">\n                  </div>\n                  <div class="token object col-xs-12 col-md-4" data-token="object">\n                    <input class="typeahead" placeholder="Object" value="{{#label}}{{o}}{{/label}}">\n                  </div>\n                </div>\n                <div class="btn-delete" title="Delete triple"><span class="glyphicon glyphicon-trash"/></div>\n              </div>\n            '
+	            },
+	            validateMp: {
+	                subject: ["http://data.perseus.org/people/smith:", "smith:"],
+	                predicate: ["http://data.snapdrgn.net/ontology/snap#", "snap:", "http://data.perseus.org/rdfvocab/addons/", "perseusrdf:"],
+	                object: ["http://data.perseus.org/people/smith:", "smith:"]
+	            },
+	            validateFn: function validateFn(map) {
+	                return function (token, text) {
+	                    return token && text ? _$1.reduce(map[token], function (acc, x) {
+	                        return acc || text.startsWith(x);
+	                    }, false) : $$1('.graph.old').find('.invalid').length || $$1('.graph.new').find('.typeahead.tt-input.valid').length != $$1('.graph.new').find('.typeahead.tt-input').length;
+	                };
+	            }
+	        };
+
+	        return _this = possibleConstructorReturn(this, (SocialNetwork.__proto__ || Object.getPrototypeOf(SocialNetwork)).call(this, app, config));
 	    }
 
 	    createClass(SocialNetwork, null, [{
@@ -44558,210 +44626,14 @@
 	        value: function uri() {
 	            return "http://data.perseus.org/graphs/persons";
 	        }
+	    }, {
+	        key: 'icon',
+	        value: function icon() {
+	            return "user";
+	        }
 	    }]);
 	    return SocialNetwork;
 	}(Plugin);
-
-	var View$1 = function View(ontology, labels) {
-	    var _this = this;
-
-	    classCallCheck(this, View);
-
-	    this.substringMatcher = Utils.substringMatcher;
-	    this.names = ontology.resources();
-	    var self = this;
-	    self.ontology = ontology;
-	    this.decodeHTML = Utils.decodeHTML;
-
-	    this.updateValue = function (event, text) {
-	        if (!text && event.type === "paste") {
-	            text = event.target.value + event.originalEvent.clipboardData.getData("text");
-	        }
-	        var triple = $$1(event.target).closest('.triple').get(0);
-	        var token = $$1(event.target).closest('.token').data('token');
-	        triple.setAttribute('data-' + token, text);
-	        if (triple.dataset[token] != triple.dataset[token + '-original']) $$1(triple).addClass('update');
-	    };
-
-	    this.view = {
-	        label: function label() {
-	            return function (uri, render) {
-	                var rendered = _this.decodeHTML(render(uri));
-	                return self.ontology.label(rendered) || rendered;
-	            };
-	        }
-	    };
-
-	    this.partials = {
-	        triple: '\n              <div class="triple" title="Graph:{{g}} Subject:{{s}} Predicate:{{p}} Object:{{o}}" data-original-subject="{{s}}" data-original-predicate="{{p}}" data-original-object="{{o}}" data-subject="{{s}}" data-predicate="{{p}}" data-object="{{o}}">\n                <div class="sentence well container">\n                  <div class="token subject col-xs-12 col-md-4" data-token="subject">\n                  <div class="input-group">\n                      <span class="input-group-addon" title="Person ID" id="basic-addon1"><span class="glyphicon glyphicon-user"></span></span>\n                    <input class="typeahead" placeholder="Character" value="{{#label}}{{s}}{{/label}}">\n                  </div>\n                  </div>\n                  <div class="token predicate col-xs-12 col-md-4" data-token="predicate">\n                  <div class="input-group">\n                      <span class="input-group-addon" title="English URN" id="basic-addon1">aA</span></span>\n                    <input class="typeahead" placeholder="English" value="{{#label}}{{p}}{{/label}}">\n                    </div>\n                  </div>\n                  <div class="token object col-xs-12 col-md-4" data-token="object">\n                  <div class="input-group">\n                      <span class="input-group-addon" title="Greek URN" id="basic-addon1">αΑ</span></span>\n                    <input class="typeahead" placeholder="Greek / Latin" value="{{#label}}{{o}}{{/label}}">\n                    </div>\n                  </div>\n                </div>\n                <div class="btn-delete" title="Delete triple"><span class="glyphicon glyphicon-trash"/></div>\n              </div>\n            ',
-	        graph: '<div class="graph old" data-graph="{{g}}">{{#triples}}{{> triple}}{{/triples}}</div>',
-	        graphs: '{{#annotations}}{{> graph}}{{/annotations}}',
-	        // done: add empty graph container to create template and add new triples to it.
-	        new: '<div class="graph new"/><div style="text-align: center; z-index:5;"><div id="new_button" class="btn btn-info btn-circle" title="Add triple">+</div></div>',
-	        anchor: '<div class=\'anchor\'><span class="prefix selector">{{selector.prefix}}</span><span class="exact selector">{{selector.exact}}</span><span class="suffix selector">{{selector.suffix}}</span></div>'
-	    }; // planned: add selector and display anchor
-
-	    this.init = function (jqElement, data) {
-	        jqElement.html(Mustache.render("{{> graphs}}{{> new}}{{> anchor}}", Object.assign({}, data, self.view), self.partials));
-	        jqElement.closest('.modal').find();
-	        function activate(el) {
-	            el.find('div.btn-delete').click(function (e) {
-	                var triple = $$1(e.target).closest('.triple');
-	                triple.animate({ 'height': '0px', 'margin-top': '0px', 'margin-bottom': '0px' }, { duration: 150, complete: function complete() {
-	                        $$1(e.target).closest('.triple').hide();
-	                    } });
-	                triple.addClass('delete');
-	                if (!triple.siblings(':not(.delete)').length) triple.closest('.graph.old').addClass('delete');
-	            });
-	            el.find('#new_button').click(function (e) {
-	                var split = _$1.last($$1("#annotator-main").data('urn').split("."));
-	                var character = split ? "http://data.perseus.org/people/smith:" + split.replace(new RegExp('_', 'gi'), "-") + "#this" : "";
-	                var triple = $$1('.graph.new').find('.triple:not(.delete):last');
-	                // the following prevents the button from creating a new triple before the previous one has been completed
-	                if (!triple.length || triple.attr('data-subject') && (triple.attr('data-predicate') || triple.attr('data-object'))) {
-	                    var list = $$1(Mustache.render("{{> triple}}", Object.assign({}, { g: "", s: character, p: "", o: "" }, self.view), self.partials));
-	                    list.appendTo($$1('.graph.new'));
-	                    activate(list);
-	                }
-	            });
-	            el.find('input').each(function (i, e) {
-	                return $$1(e).typeahead({ minLength: 3, highlight: true }, { source: self.substringMatcher(self.names) });
-	            });
-
-	            el.find('.token').on('paste', self.updateValue);
-	            el.find('.token').on('typeahead:selected', self.updateValue);
-	            el.find('.token').on('typeahead:autocompleted', self.updateValue);
-	            el.find('.token').on('keyup', function (e) {
-	                if (e.key.length === 1 || e.key === "Backspace") {
-	                    self.updateValue(e, e.target.value);
-	                }
-	            });
-
-	            return el;
-	        }
-	        return activate(jqElement);
-	    };
-	};
-
-	var Reporter$1 = function () {
-	    function Reporter(ontologies, annotator) {
-	        classCallCheck(this, Reporter);
-
-	        this.ontologies = ontologies;
-	        this.annotator = annotator;
-	    }
-
-	    createClass(Reporter, [{
-	        key: 'title',
-	        value: function title(bindings, annotationId) {
-	            // todo: Use ontologies to figure out title? == app.ontology.makeTitle(bindings)
-	            // todo: also figure out motivation in ontology
-
-	            // map bindings to subjects, map subject with hasCharacter, hasEnglish, hasGreek
-
-	            var xs = _$1.chain(bindings).groupBy(function (gspo) {
-	                return gspo.s.value || gspo.s;
-	            }).mapValues(function (list) {
-	                return {
-	                    character: _$1.find(list, function (binding) {
-	                        return binding.p.value.endsWith("hasCharacter");
-	                    }).o.value,
-	                    english: _$1.find(list, function (binding) {
-	                        return binding.p.value.endsWith("hasEnglish");
-	                    }).o.value,
-	                    greek: _$1.find(list, function (binding) {
-	                        return binding.p.value.endsWith("hasGreek");
-	                    }).o.value
-	                };
-	            }).values().value();
-
-	            return _$1.flatten(xs.map(function (x) {
-	                return OA.makeTitle(annotationId, Characterizations.uri(), x.character + ' is described as \'' + x.english.split('@')[1] + '\' in ' + x.english);
-	            }));
-	        }
-	    }, {
-	        key: 'delete_graphs',
-	        value: function delete_graphs() {
-	            var dG = this.annotator().modal.find('.graph.old.delete');
-	            var delete_graphs = dG.map(function (i, el) {
-	                return $$1(el).data('graph');
-	            }).get();
-	            dG.remove();
-	            return delete_graphs;
-	        }
-	    }, {
-	        key: 'delete_triples',
-	        value: function delete_triples(annotations) {
-	            var _this2 = this;
-
-	            var dT = this.annotator().modal.find('.graph.old .triple.delete');
-	            var delete_triples = _$1.flatten(_$1.zip(dT.closest('.graph.old').map(function (i, el) {
-	                return $$1(el).data('graph');
-	            }), dT.map(function (i, el) {
-	                return $$1(el).data('original-subject');
-	            }), dT.map(function (i, el) {
-	                return $$1(el).data('original-predicate');
-	            }), dT.map(function (i, el) {
-	                return $$1(el).data('original-object');
-	            })).map(function (zipped) {
-	                return { g: zipped[0], s: zipped[1], p: zipped[2], o: zipped[3] };
-	            }).map(function (gspo) {
-	                return _this2.ontologies.expand(gspo, annotations, Characterizations.ns());
-	            }) // todo: use correct ontology
-	            );
-	            dT.remove();
-	            return delete_triples;
-	        }
-	    }, {
-	        key: 'update_triples',
-	        value: function update_triples() {
-	            var uT = this.annotator().modal.find('.graph.old .triple.update');
-	            var update_triples = _$1.zip(uT.closest('.graph.old').map(function (i, el) {
-	                return $$1(el).data('graph');
-	            }), uT.map(function (i, el) {
-	                return $$1(el).data('original-subject');
-	            }), uT.map(function (i, el) {
-	                return $$1(el).data('original-predicate');
-	            }), uT.map(function (i, el) {
-	                return $$1(el).data('original-object');
-	            }), uT.map(function (i, el) {
-	                return $$1(el).attr('data-subject');
-	            }), uT.map(function (i, el) {
-	                return $$1(el).attr('data-predicate');
-	            }), uT.map(function (i, el) {
-	                return $$1(el).attr('data-object');
-	            }));
-	            return update_triples;
-	        }
-	    }, {
-	        key: 'create_triples',
-	        value: function create_triples(annotations, cite, selector) {
-	            var _this3 = this;
-
-	            var cT = this.annotator().modal.find('.graph.new .triple:not(.delete)');
-	            var new_triples = _$1.flatten(_$1.zip(cT.map(function (i, el) {
-	                return $$1(el).attr('data-subject');
-	            }), cT.map(function (i, el) {
-	                return $$1(el).attr('data-predicate');
-	            }), cT.map(function (i, el) {
-	                return $$1(el).attr('data-object');
-	            })).filter(function (t) {
-	                return t[0] && (t[1] || t[2]);
-	            }).map(function (t) {
-	                return { g: cite, s: t[0], p: t[1] || "", o: t[2] || "" };
-	            }).map(function (t) {
-	                return _this3.ontologies.expand(t, annotations, Characterizations.ns());
-	            })); // todo: use correct ontology
-	            _$1.assign(selector, { id: cite + "#sel-" + Utils.hash(JSON.stringify(selector)).slice(0, 4) });
-	            var selector_triples = OA.expand(selector.type)(_$1.mapValues(selector, function (v) {
-	                return v.replace(new RegExp('\n', 'ig'), '');
-	            }), Characterizations.uri());
-	            var create_triples = new_triples.length ? _$1.concat(new_triples, selector_triples, this.title(_$1.flatten(new_triples), cite)) : [];
-	            return _$1.flatten(create_triples);
-	        }
-	    }]);
-	    return Reporter;
-	}();
 
 	var Characterizations = function (_Plugin) {
 	    inherits(Characterizations, _Plugin);
@@ -44769,99 +44641,105 @@
 	    function Characterizations(app) {
 	        classCallCheck(this, Characterizations);
 
-	        var _this4 = possibleConstructorReturn(this, (Characterizations.__proto__ || Object.getPrototypeOf(Characterizations)).call(this));
 
-	        var self = _this4;
-	        _this4.annotator = function () {
-	            return app.annotator;
-	        };
-	        _this4.view = new View$1(app.ontology);
-	        _this4.reporter = new Reporter$1(app.ontology, _this4.annotator);
-	        _this4.origin = {};
-	        _this4.selector = {};
+	        var config = {
+	            titleFn: function titleFn(bindings, annotationId) {
+	                // todo: Use ontologies to figure out title? == app.ontology.makeTitle(bindings)
+	                // todo: also figure out motivation in ontology
 
-	        var button = '<div class="btn btn-primary btn-characterizations btn-edit" data-toggle="modal" data-target="#edit_modal"><span class="glyphicon glyphicon-transfer"></span></div>';
-	        $$1('body').on('shown.bs.popover', function (e) {
-	            return $$1('#' + e.target.getAttribute('aria-describedby')).find('.popover-footer').append(button);
-	        });
-	        $$1('body').on('click', '.btn-characterizations', function (e) {
-	            self.annotator().modal.find('.modal-header > h3').html("Characterizations");
-	            var id = $$1(e.target).closest('.popover').attr('id');
-	            self.origin = $$1(document.querySelectorAll('[aria-describedby="' + id + '"]'));
+	                // map bindings to subjects, map subject with hasCharacter, hasEnglish, hasGreek
 
-	            var data = _$1.pickBy(self.origin.data('annotations'), function (v) {
-	                return _$1.find(v, function (o) {
-	                    return (o.g.value || o.g) === Characterizations.uri();
-	                });
-	            });
-	            var newSelector = self.origin.data('selector');
-	            _this4.selector = newSelector;
-	            var body = $$1('.modal-body');
+	                var xs = _$1.chain(bindings).groupBy(function (gspo) {
+	                    return gspo.s.value || gspo.s;
+	                }).mapValues(function (list) {
+	                    return {
+	                        character: _$1.find(list, function (binding) {
+	                            return binding.p.value.endsWith("hasCharacter");
+	                        }).o.value,
+	                        english: _$1.find(list, function (binding) {
+	                            return binding.p.value.endsWith("hasEnglish");
+	                        }).o.value,
+	                        greek: _$1.find(list, function (binding) {
+	                            return binding.p.value.endsWith("hasGreek");
+	                        }).o.value
+	                    };
+	                }).values().value();
 
-	            var graphs = _$1.mapValues(data, function (v, k) {
-	                return _$1.flatten(OA.getBodies(v).map(function (b) {
-	                    return app.ontology.simplify(b, k, Characterizations.ns());
+	                return _$1.flatten(xs.map(function (x) {
+	                    return OA.makeTitle(annotationId, Characterizations.uri(), x.character + ' is described as \'' + x.english.split('@')[1] + '\' in ' + x.english);
 	                }));
-	            }); // todo: use correct ontology
+	            },
+	            activateFn: function activateFn(self) {
+	                return function (el) {
+	                    el.find('div.btn-delete').click(function (e) {
+	                        var triple = $$1(e.target).closest('.triple');
+	                        triple.animate({ 'height': '0px', 'margin-top': '0px', 'margin-bottom': '0px' }, {
+	                            duration: 150,
+	                            complete: function complete() {
+	                                $$1(e.target).closest('.triple').hide();
+	                            }
+	                        });
+	                        triple.addClass('delete');
+	                        if (!triple.siblings(':not(.delete)').length) triple.closest('.graph.old').addClass('delete');
+	                    });
+	                    el.find('#new_button').click(function (e) {
+	                        var split = _$1.last($$1("#annotator-main").data('urn').split("."));
+	                        var character = split ? "http://data.perseus.org/people/smith:" + split.replace(new RegExp('_', 'gi'), "-") + "#this" : "";
+	                        var triple = $$1('.graph.new').find('.triple:not(.delete):last');
+	                        // the following prevents the button from creating a new triple before the previous one has been completed
+	                        if (!triple.length || triple.attr('data-subject') && (triple.attr('data-predicate') || triple.attr('data-object'))) {
+	                            var list = $$1(Mustache.render("{{> triple}}", Object.assign({}, {
+	                                g: "",
+	                                s: character,
+	                                p: "",
+	                                o: ""
+	                            }, self.view), self.partials));
+	                            list.appendTo($$1('.graph.new'));
+	                            self.activate(list);
+	                        }
+	                    });
+	                    el.find('input').each(function (i, e) {
+	                        return $$1(e).typeahead({
+	                            minLength: 3,
+	                            highlight: true
+	                        }, { source: self.substringMatcher(self.names) });
+	                    });
 
-	            self.view.init(body, {
-	                annotations: Object.keys(graphs).map(function (k) {
-	                    return { g: k, triples: graphs[k] };
-	                })
-	            });
+	                    el.find('.token').on('paste', self.updateValue);
+	                    el.find('.token').on('typeahead:selected', self.updateValue);
+	                    el.find('.token').on('typeahead:autocompleted', self.updateValue);
+	                    el.find('.token').on('keyup', function (e) {
+	                        if (e.key.length === 1 || e.key === "Backspace") {
+	                            self.updateValue(e, e.target.value);
+	                        }
+	                    });
 
-	            var apply_button = self.annotator().modal.find('#btn-apply');
-	            // todo: add selector to button?
-	            apply_button.off();
-	            apply_button.on('click', self.apply);
-	            // init reporter
-	        });
-
-	        _this4.template = function () {};
-
-	        _this4.button = function () {};
-
-	        _this4.apply = function (event) {
-
-	            // get prerequisite data
-	            var annotations = self.origin.data('annotations');
-	            var cite = Utils.cite(app.getUser() + app.getUrn(), Math.random().toString());
-	            // retrieve data
-	            var delete_graphs = self.reporter.delete_graphs();
-	            var delete_triples = self.reporter.delete_triples(annotations);
-	            var update_triples = self.reporter.update_triples();
-	            var create_triples = self.reporter.create_triples(annotations, cite, self.selector);
-
-	            // send to annotator
-	            var acc = [];
-	            var annotator = _this4.annotator();
-	            annotator.drop(delete_graphs).then(function (res) {
-	                acc.push(res);
-	                return annotator.delete(_$1.concat(delete_triples, delete_graphs.map(function (id) {
-	                    return annotations[id];
-	                })));
-	            }).then(function (res) {
-	                acc.push(res);
-	                return annotator.update(_$1.flatten(update_triples.map(function (t) {
-	                    return app.ontology.expand({ g: t[0], s: t[1], p: t[2], o: t[3] }, annotations, Characterizations.ns());
-	                })), // todo: use correct ontology
-	                _$1.flatten(update_triples.map(function (t) {
-	                    return app.ontology.expand({ g: t[0], s: t[4], p: t[5], o: t[6] }, annotations, Characterizations.ns());
-	                })), // todo: use correct ontology
-	                Characterizations.uri());
-	            }).then(function (res) {
-	                acc.push(res);
-	                return annotator.create(cite, create_triples, Characterizations.uri());
-	            }).then(function (res) {
-	                return annotator.apply(_$1.flatten(acc.concat(res)));
-	            });
-
-	            self.origin.popover('hide');
+	                    return el;
+	                };
+	            },
+	            partials: {
+	                triple: '\n                  <div class="triple" title="Graph:{{g}} Subject:{{s}} Predicate:{{p}} Object:{{o}}" data-original-subject="{{s}}" data-original-predicate="{{p}}" data-original-object="{{o}}" data-subject="{{s}}" data-predicate="{{p}}" data-object="{{o}}">\n                   <div class="sentence well container">\n                      <div class="token subject col-xs-12 col-md-4" data-token="subject">\n                      <div class="input-group">\n                          <span class="input-group-addon" title="Person ID" id="basic-addon1"><span class="glyphicon glyphicon-user"></span></span>\n                        <input class="typeahead" placeholder="Character" value="{{#label}}{{s}}{{/label}}">\n                      </div>\n                      </div>\n                      <div class="token predicate col-xs-12 col-md-4" data-token="predicate">\n                      <div class="input-group">\n                          <span class="input-group-addon" title="English URN" id="basic-addon1">aA</span></span>\n                        <input class="typeahead" placeholder="English" value="{{#label}}{{p}}{{/label}}">\n                        </div>\n                      </div>\n                      <div class="token object col-xs-12 col-md-4" data-token="object">\n                      <div class="input-group">\n                          <span class="input-group-addon" title="Greek URN" id="basic-addon1">αΑ</span></span>\n                        <input class="typeahead" placeholder="Greek / Latin" value="{{#label}}{{o}}{{/label}}">\n                        </div>\n                      </div>\n                    </div>\n                    <div class="btn-delete" title="Delete triple"><span class="glyphicon glyphicon-trash"/></div>\n                  </div>\n                '
+	            },
+	            validateMp: {
+	                subject: ["http://data.perseus.org/people/smith:", "smith:"],
+	                predicate: [""],
+	                object: [""]
+	            },
+	            validateFn: function validateFn(map) {
+	                return function (token, text) {
+	                    return token && text ? text.trim() && _$1.reduce(map[token], function (acc, x) {
+	                        return acc || text.startsWith(x);
+	                    }, false) : $$1('.graph').find('.invalid').length || !$$1('.graph.new').find('.triple').map(function (i, e) {
+	                        return $$1(e).find('.predicate .valid').length + $$1(e).find('.object .valid').length;
+	                    }).toArray().reduce(function (acc, e) {
+	                        return acc && e;
+	                    }, true);
+	                };
+	            }
+	            // todo: getting there, needs to deal with empty or blank strings
 	        };
 
-	        _this4.register = function () {};
-
-	        return _this4;
+	        return possibleConstructorReturn(this, (Characterizations.__proto__ || Object.getPrototypeOf(Characterizations)).call(this, app, config));
 	    }
 
 	    createClass(Characterizations, null, [{
@@ -44873,6 +44751,11 @@
 	        key: 'uri',
 	        value: function uri() {
 	            return "http://data.perseus.org/graphs/characterizations";
+	        }
+	    }, {
+	        key: 'icon',
+	        value: function icon() {
+	            return "transfer";
 	        }
 	    }]);
 	    return Characterizations;
@@ -45084,7 +44967,7 @@
 	        this[history] = app.history;
 
 	        // todo: this is part of the base module
-	        this.modal = $$1('<div id="edit_modal" class="modal fade in" style="display: none; "><div class="well"><div class="modal-header"><a class="close" data-dismiss="modal">×</a><h3>Annotation Editor</h3></div><div class="modal-body"></div><div class="modal-footer"><button id="btn-apply" type="button" class="btn btn-primary" data-dismiss="modal" title="Apply changes">Apply</button></div></div>');
+	        this.modal = $$1('<div id="edit_modal" class="modal fade in" style="display: none; "><div class="well"><div class="modal-header"><a class="close" data-dismiss="modal">×</a><h3>Annotation Editor</h3></div><div class="modal-body"></div><div class="modal-footer"><button id="btn-apply" type="button" class="btn btn-primary" data-dismiss="modal" disabled title="Apply changes">Apply</button></div></div>');
 	        app.anchor.append(this.modal);
 
 	        app.anchor.mouseup(function (e) {
