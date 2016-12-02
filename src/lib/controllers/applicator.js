@@ -1,21 +1,13 @@
 import $ from 'jquery'
 import _ from 'lodash'
-import Selectors from '../models/queries/oa_selectors'
-import Annotation from '../models/queries/oabyId'
 import TextQuoteAnchor from 'dom-anchor-text-quote'
 import wrapRangeText from 'wrap-range-text'
 import NodeLink from '../views/applicator/NodeLink'
 import Tooltip from '../views/applicator/Tooltip'
-import Editor from '../views/applicator/Editor'
-import SNAP from '../models/ontologies/SNAP'
+import SocialNetwork from '../views/annotator/SocialNetworkNG'
+import Characterizations from '../views/annotator/CharacterizationsNG'
 import OA from '../models/ontologies/OA'
 
-class Marker {
-
-}
-// I have a list of selector types
-// I have a list of queries to get selector data
-// I have a list of functions to apply
 /**
  * Class for visualization of annotations.
  *
@@ -30,8 +22,9 @@ class Applicator {
 
         var model = app.model;
 
+        this.spinner = $(`<div class="spinner"><span class="glyphicon glyphicon-refresh glyphicon-spinning"></span><br><span>Loading ...</span></div>`).appendTo(app.anchor)
         // planned: move this to an utility class, note: var escape = (s) => s.replace(/[-/\\^$*+?.()（）|[\]{}]/g, '\\$&').replace(/\$/g, '$$$$');
-
+        this.spinner.css('display','inline-block')
         /**
          * Mark selector positions with span tag and add quads to data
          * @type {{[http://www.w3.org/ns/oa#TextQuoteSelector]: ((p1:*, p2:*))}}
@@ -56,7 +49,7 @@ class Applicator {
          * @param id (optional) annotation id to query
          */
         this.load = (id) =>
-            model.execute(Annotation.byIdentifier(id))
+            model.execute(OA.query("byIdentifier")(id)) // todo:
             .then((bindings) =>
                 _.groupBy(_.last(bindings).result,'id.value')
             ).then((grouped) => {
@@ -73,25 +66,26 @@ class Applicator {
                         return span
                     })
 
-                return _.uniq(spans).map((span) => {
+                return _.uniqBy(spans.map((span) => {
                     var data = store[span.getAttribute('id')]
                     var element = document.getElementById(span.getAttribute('id'))
                     element.setAttribute('data-annotations',JSON.stringify(data))
                     return $(element)
-                })
+                }), (j) => j.attr('id'))
                 }
             )
             .then((elements) =>
                 elements.map((element) => {
-                    this.tooltip.register(element);
-                    this.delete.register(element);
+                    this.tooltip.register(element); // todo: (though we might want to adjust markers based on existing annotations)
+                    this.socialnetwork.register(element); // todo: this can probably be removed or moved to Annotator
+                    this.characterizations.register(element); // todo: MOVE IT TO ANNOTATOR
                     return element
                 })
             )
             .then((elements) => {
                     var grouped = elements.reduce((object, element) => _.merge(object,element.data('annotations')), {})
-                    var snap = SNAP.simplify()(grouped) // planned: move into nodelink, specify API for document plugins
-                    var input = _.flatMap(snap,(v,k)=>v.map((o) => Object.assign(o,{g:k})))
+                    var snap = _.mapValues(grouped, (v,k) => OA.getBodies(v).map((b) => app.ontology.simplify(b,k))) // planned: move into nodelink, specify API for document plugins
+                    var input = _.flatMapDeep(snap,(v,k)=>v.map((o) => o.map((p) => Object.assign(p,{g:k}))))
                     this.nodelink.add(input)
                 }
             )
@@ -116,15 +110,18 @@ class Applicator {
         };
 
         this.reset = () => {
+            this.spinner.css('display','inline-block')
             this.unload()
-            this.load()
+            this.load().then(() => this.spinner.css('display','none'))
         }
 
         // var body = $('body');
         this.tooltip = new Tooltip(app)
-        this.delete = new Editor(app)
+        this.socialnetwork = new SocialNetwork(app)
+        this.characterizations = new Characterizations(app)
         this.nodelink = new NodeLink(app)
-        this.load();
+        this.load().then(() => this.spinner.css('display','none'));
+        // todo: Should I move this to an init function? At least it's not returning the promise
     }
 
     // planned: move plugins into lists for elements (e.g. tooltip) and document (e.g. nodelink)
