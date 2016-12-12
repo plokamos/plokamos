@@ -125,9 +125,9 @@ class Utils {
         return passwd;
     }
 
-    static hash(str) {return JSON.stringify(str).split("").reduce((a,b) => {a=((a<<5)-a)+b.charCodeAt(0);return a&a},0).toString(16).replace("-","0")}
+    static hash(str) {return JSON.stringify(str||Math.random()).split("").reduce((a,b) => {a=((a<<5)-a)+b.charCodeAt(0);return a&a},0).toString(16).replace("-","0")}
 
-    static cite(pre,post) { return "http://data.perseus.org/collections/urn:cite:perseus:pdljann."+this.hash(pre)+this.hash(post) }
+    static cite(pre,post) { return !pre || !post || "%/?#:.@-[]\\\"&<>^`|{}~".split("").map(s => (pre+post).indexOf(s)+1).reduce((acc,b) => acc && b, true) ? undefined : "http://data.perseus.org/collections/urn:cite:perseus:pdljann."+this.hash(pre)+this.hash(post) }
 
     static substringMatcher(strs) {
         return function findMatches(q, cb) {
