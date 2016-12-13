@@ -73,7 +73,7 @@ class Ontology {
                 return _.map(resource,(v,k) => this.test(v.value || v) ? coefficients[k]: 0)
                 break;
             default:
-                return this[vocabulary].test(resource)
+                return (this[vocabulary].test(resource) ? 1 : 0)
         }
     }
 
