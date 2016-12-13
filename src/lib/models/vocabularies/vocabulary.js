@@ -18,15 +18,15 @@ class Vocabulary {
     }
 
     test(resource) {
-        return this[TERMS][resource] || this[TERMS][resource.replace(this[PREFIX],this[URI])] || _.values(this[TERMS]).indexOf(resource)+1// todo: test for prefixed and labeled resources
+        return resource ? this[TERMS][resource] || this[TERMS][resource.replace(this[PREFIX],this[URI])] || _.values(this[TERMS]).indexOf(resource)+1 : false
     }
 
     label(resource) {
-        return this[TERMS][resource] || this[TERMS][resource.replace(this[PREFIX],this[URI])] || resource
+        return typeof resource === 'string' ? this[TERMS][resource] || this[TERMS][resource.replace(this[PREFIX],this[URI])] || resource : ""
     }
 
     unlabel(string) {
-        return _.invert(this[TERMS])[string]
+        return typeof string === 'string' ? _.invert(this[TERMS])[string] || string : ""
     }
 
     description() {
