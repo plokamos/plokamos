@@ -13,20 +13,21 @@ var pmetaMap = {
     "http://data.perseids.org/meta#Object" : "o"
 }
 
-// todo: do we need to check for id? if so, we can check for it anywhere, e.g. reduce (values == id) with OR
 var simplification = (rules) =>
-    (v,id) =>
-        _.reduce(
+    (v,id) => {
+        var res = _.reduce(
             rules,
             (result, rule) => {
-                 var found = _.find(v, (o) =>
-                     (o[pmetaMap[rule.constraint]].value || o[pmetaMap[rule.constraint]]) === rule.value
-                    )
-                result[pmetaMap[rule.target]] = found[pmetaMap[rule.source]].value
+                var found = _.find(v, (o) =>
+                    (o[pmetaMap[rule.constraint]].value || o[pmetaMap[rule.constraint]]) === rule.value // todo: if id is defined, check values for id
+                )
+                if (found) result[pmetaMap[rule.target]] = found[pmetaMap[rule.source]].value || found[pmetaMap[rule.source]]
                 return result
             },
             {}
         )
+        return _.keys(res).length===rules.length ? res : {}
+    }
 
 var expansion = (rules) => (gspo, graphs) => {
 
